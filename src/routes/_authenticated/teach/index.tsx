@@ -34,6 +34,10 @@ import {
   X,
   Video,
   Image as ImageIcon,
+  Paperclip,
+  Download,
+  Tag,
+  FileText,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -446,6 +450,12 @@ function TeachDashboardPage() {
   });
   const [newAsgMaxScore, setNewAsgMaxScore] = useState(100);
   const [newAsgDesc, setNewAsgDesc] = useState("");
+  const [newAsgAttachments, setNewAsgAttachments] = useState<
+    Array<{ name: string; url: string; size?: number; type?: string }>
+  >([]);
+  const [newAsgStarterRepo, setNewAsgStarterRepo] = useState("");
+  const [newAsgTags, setNewAsgTags] = useState("");
+  const [isUploadingAsgFile, setIsUploadingAsgFile] = useState(false);
 
   // Create Quiz Form State
   const [newQuizTitle, setNewQuizTitle] = useState("");
@@ -1117,6 +1127,27 @@ function TeachDashboardPage() {
     }
   };
 
+  const handleUploadAssignmentFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingAsgFile(true);
+    try {
+      const res = await lmsClient.uploadAssignmentFile(file);
+      if (res?.file?.url) {
+        setNewAsgAttachments((prev) => [...prev, res.file]);
+        setMsg({ text: `Uploaded "${file.name}" successfully.` });
+      }
+    } catch (err) {
+      setMsg({
+        text: err instanceof Error ? err.message : "Failed to upload file",
+        isError: true,
+      });
+    } finally {
+      setIsUploadingAsgFile(false);
+      e.target.value = "";
+    }
+  };
+
   const handleCreateAssignment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAsgTitle.trim() || !newAsgDesc.trim()) {
@@ -1125,12 +1156,21 @@ function TeachDashboardPage() {
     }
 
     try {
+      const tags = newAsgTags
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
+
       const savedResult = await lmsClient.saveAssignment({
         courseId: newAsgCourse,
         title: newAsgTitle.trim(),
         description: newAsgDesc.trim(),
         dueDate: newAsgDue,
         maxScore: newAsgMaxScore,
+        instructor: displayName,
+        attachments: newAsgAttachments,
+        starterRepoUrl: newAsgStarterRepo.trim(),
+        tags,
       });
       const saved = (savedResult?.assignment || {}) as Record<string, unknown>;
       const savedId = String(saved.id || "");
@@ -1147,14 +1187,22 @@ function TeachDashboardPage() {
         dueDate: String(saved.due_date || newAsgDue),
         maxScore: Number(saved.max_score ?? newAsgMaxScore),
         submissionCount: 0,
+        instructor: displayName,
+        attachments: newAsgAttachments,
+        starterRepoUrl: newAsgStarterRepo.trim(),
+        tags,
       };
       setAssignmentDefs((current) =>
         current.some((item) => item.id === savedId) ? current : [savedAssignment, ...current],
       );
       setNewAsgTitle("");
       setNewAsgDesc("");
-      setMsg({ text: `Assignment "${savedAssignment.title}" saved successfully.` });
+      setNewAsgAttachments([]);
+      setNewAsgStarterRepo("");
+      setNewAsgTags("");
+      setMsg({ text: `Assignment "${savedAssignment.title}" published and provided to students!` });
       window.dispatchEvent(new CustomEvent("lms_data_updated"));
+      window.dispatchEvent(new CustomEvent("lms_assignment_defs_updated"));
       await loadInstructorData();
       switchView("assignments");
     } catch (err: unknown) {
@@ -2738,6 +2786,35 @@ function TeachDashboardPage() {
                     </div>
                     <h4 className="text-base font-bold text-slate-900 mt-1">{asg.title}</h4>
                     <p className="text-xs text-slate-600 mt-1">{asg.description}</p>
+                    {asg.attachments && asg.attachments.length > 0 && (
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[10px] font-semibold text-slate-400">Materials:</span>
+                        {asg.attachments.map((att, aIdx) => (
+                          <a
+                            key={aIdx}
+                            href={att.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            download
+                            className="inline-flex items-center gap-1 rounded bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-700 hover:bg-teal-100"
+                          >
+                            <Download className="size-2.5" /> {att.name}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    {asg.starterRepoUrl && (
+                      <div className="mt-1">
+                        <a
+                          href={asg.starterRepoUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-700 hover:underline"
+                        >
+                          <ExternalLink className="size-2.5" /> Starter Repo: {asg.starterRepoUrl}
+                        </a>
+                      </div>
+                    )}
                     <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
                       <span>
                         Max Marks: <strong>{asg.maxScore}</strong>
@@ -2837,17 +2914,86 @@ function TeachDashboardPage() {
                     rows={3}
                     value={newAsgDesc}
                     onChange={(e) => setNewAsgDesc(e.target.value)}
-                    placeholder="State requirements, starter repositories, and scoring criteria..."
+                    placeholder="State requirements, instructions, and scoring criteria..."
                     className="text-xs"
                     required
                   />
                 </div>
 
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">
+                    Starter Code / GitHub URL (Optional)
+                  </label>
+                  <Input
+                    value={newAsgStarterRepo}
+                    onChange={(e) => setNewAsgStarterRepo(e.target.value)}
+                    placeholder="https://github.com/skillbridge/starter-template"
+                    className="text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">
+                    Topic Tags (Comma-separated)
+                  </label>
+                  <Input
+                    value={newAsgTags}
+                    onChange={(e) => setNewAsgTags(e.target.value)}
+                    placeholder="TypeScript, Generics, Concurrency"
+                    className="text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">
+                    Upload Assignment Brief / Starter Pack (PDF, ZIP, DOCX)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <label className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer transition-colors">
+                      <Upload className="size-3.5 text-teal-700" />
+                      <span>{isUploadingAsgFile ? "Uploading to Server..." : "Choose File to Upload"}</span>
+                      <input
+                        type="file"
+                        onChange={handleUploadAssignmentFile}
+                        disabled={isUploadingAsgFile}
+                        accept=".pdf,.zip,.tar,.gz,.docx,.doc,.txt,.md,.json,.ts,.tsx,.js,.jsx,.py"
+                        className="hidden"
+                      />
+                    </label>
+                    {isUploadingAsgFile && <Loader2 className="size-4 animate-spin text-teal-700" />}
+                  </div>
+
+                  {newAsgAttachments.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {newAsgAttachments.map((att, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between rounded-md border border-teal-200 bg-teal-50 px-2.5 py-1 text-[11px] text-teal-800"
+                        >
+                          <span className="truncate max-w-[180px] font-medium flex items-center gap-1">
+                            <Paperclip className="size-3" /> {att.name}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setNewAsgAttachments((prev) => prev.filter((_, i) => i !== idx))
+                            }
+                            className="text-red-500 hover:text-red-700 font-bold ml-2 cursor-pointer"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <Button
                   type="submit"
+                  disabled={isUploadingAsgFile}
                   className="w-full bg-teal-700 hover:bg-teal-800 text-white font-bold cursor-pointer"
                 >
-                  Publish Assignment
+                  Publish & Provide to Students
                 </Button>
               </form>
             </div>

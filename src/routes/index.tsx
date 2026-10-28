@@ -48,11 +48,13 @@ import {
   type VideoComment,
   getSubmissions,
   saveSubmission,
+  getAssignmentDefinitions,
   getVideoComments,
   addVideoComment,
   syncStudentEnrollment,
 } from "@/lib/lms-store";
 import { StudentLayout, type StudentView } from "@/components/layouts/StudentLayout";
+import { StudentAssignmentsView, type TargetAssignment } from "@/components/student/StudentAssignmentsView";
 import { UserAvatar } from "@/components/UserAvatar";
 import { CodeLabView } from "@/components/student/CodeLabView";
 import { RecallDecksView } from "@/components/student/RecallDecksView";
@@ -245,8 +247,7 @@ const assignments = [
 const navItems: { id: View; label: string; icon: LucideIcon }[] = [
   { id: "dashboard", label: "My Learning", icon: LayoutDashboard },
   { id: "courses", label: "All Courses", icon: BookOpen },
-  { id: "assignments", label: "Assignments", icon: ClipboardList },
-  { id: "assessments", label: "Quizzes", icon: Target },
+    { id: "assessments", label: "Quizzes", icon: Target },
   { id: "notes", label: "Notes", icon: NotebookPen },
   { id: "certificates", label: "Certificates", icon: Award },
   { id: "analytics", label: "Progress", icon: BarChart3 },
@@ -826,11 +827,7 @@ function Skillbridge() {
 
   const [modal, setModal] = useState<"assignment" | "quiz" | "certificate" | null>(null);
   const [certCourse, setCertCourse] = useState<Course | null>(null);
-  const [targetAssignment, setTargetAssignment] = useState<{
-    courseTitle: string;
-    courseSlug: string;
-    assignmentTitle: string;
-  } | null>(null);
+  const [targetAssignment, setTargetAssignment] = useState<TargetAssignment | null>(null);
   const [player, setPlayer] = useState<Course | null>(null);
   const [toast, setToast] = useState<{
     id: number;
@@ -914,12 +911,14 @@ function Skillbridge() {
             }}
           />
         )}
-        {view === "assignments" && (
-          <Assignments
-            open={(asg) => {
-              setTargetAssignment(asg ?? null);
+                {view === "assignments" && (
+          <StudentAssignmentsView
+            openSubmitModal={(asg) => {
+              setTargetAssignment(asg);
               setModal("assignment");
             }}
+            dashboardData={dashboardData}
+            coursesList={coursesList}
           />
         )}
         {view === "assessments" && <Assessments open={() => setModal("quiz")} />}
@@ -1289,9 +1288,9 @@ function Dashboard({
             <h2 className="text-lg font-bold">Upcoming deadlines</h2>
             <button
               onClick={() => setView("assignments")}
-              className="text-sm font-semibold text-primary hover:underline"
+              className="text-sm font-semibold text-primary hover:underline cursor-pointer"
             >
-              See all
+              See all projects
             </button>
           </div>
           <div className="space-y-3">
@@ -2425,19 +2424,26 @@ function AssignmentModal({
   close,
   notify,
 }: {
-  targetAssignment: { courseTitle: string; courseSlug: string; assignmentTitle: string } | null;
+  targetAssignment: TargetAssignment | null;
   close: () => void;
   notify: (message: string, type?: "success" | "error" | "info") => void;
 }) {
   const { user } = useCommerce();
-  const [courseSlug, setCourseSlug] = useState(
-    targetAssignment?.courseSlug || "advanced-typescript",
-  );
-  const [assignmentTitle, setAssignmentTitle] = useState(
-    targetAssignment?.assignmentTitle || "Build a Type-Safe Event Bus with Generics",
+  const assignmentDefs = useMemo(() => getAssignmentDefinitions(), []);
+
+  const [selectedAsgId, setSelectedAsgId] = useState<string>(
+    targetAssignment?.id || assignmentDefs[0]?.id || "asg-ts-1",
   );
   const [githubUrl, setGithubUrl] = useState("");
   const [solutionNotes, setSolutionNotes] = useState("");
+
+  const activeDef = useMemo(() => {
+    return (
+      (targetAssignment?.id ? assignmentDefs.find((a) => a.id === targetAssignment.id) : null) ||
+      assignmentDefs.find((a) => a.id === selectedAsgId) ||
+      assignmentDefs[0]
+    );
+  }, [assignmentDefs, selectedAsgId, targetAssignment]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -2448,15 +2454,16 @@ function AssignmentModal({
       user?.email?.split("@")[0] ||
       "Student Learner";
 
+    const assignmentId = targetAssignment?.id || activeDef?.id || "asg-ts-1";
+    const courseSlug = targetAssignment?.courseSlug || activeDef?.courseSlug || "advanced-typescript";
+    const courseTitle = targetAssignment?.courseTitle || activeDef?.courseTitle || "Course";
+    const assignmentTitle = targetAssignment?.assignmentTitle || activeDef?.title || "Assignment";
+    const maxScore = targetAssignment?.maxScore || activeDef?.maxScore || 100;
+
     saveSubmission({
       courseSlug,
-      courseTitle:
-        courseSlug === "advanced-typescript"
-          ? "Advanced TypeScript & Design Patterns"
-          : courseSlug === "system-design"
-            ? "System Design Fundamentals"
-            : "React Performance & Architecture",
-      assignmentId: `asg-${Date.now()}`,
+      courseTitle,
+      assignmentId,
       assignmentTitle,
       studentId: user?.id || "student-user",
       studentName,
@@ -2465,40 +2472,77 @@ function AssignmentModal({
       solutionNotes: solutionNotes.trim(),
     });
 
-    notify("Assignment submitted successfully for instructor review!", "success");
+    // Also notify server LMS API
+    lmsClient
+      .submitAssignment({
+        assignmentId,
+        courseId: courseSlug,
+        githubUrl: githubUrl.trim(),
+        solutionNotes: solutionNotes.trim(),
+        maxScore,
+        studentName,
+        studentEmail: user?.email || "student@skillbridge.dev",
+      })
+      .catch(() => null);
+
+    notify("Assignment solution submitted successfully! Your instructor has been notified for code review.", "success");
     close();
   };
 
   return (
-    <Modal title="Submit Project Assignment" close={close}>
+    <Modal title="Submit Project Solution" close={close}>
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="text-xs font-semibold">Course & Assignment</label>
-          <select
-            value={courseSlug}
-            onChange={(e) => {
-              setCourseSlug(e.target.value);
-              if (e.target.value === "advanced-typescript") {
-                setAssignmentTitle("Build a Type-Safe Event Bus with Generics");
-              } else if (e.target.value === "system-design") {
-                setAssignmentTitle("Distributed Rate Limiter & Token Bucket Architecture");
-              } else {
-                setAssignmentTitle("Virtual List & Memoization Profiler");
-              }
-            }}
-            className="mt-1.5 w-full rounded-md border border-input bg-card px-3 py-2 text-xs font-medium"
-          >
-            <option value="advanced-typescript">
-              Advanced TypeScript & Design Patterns — Type-Safe Event Bus
-            </option>
-            <option value="system-design">
-              System Design Fundamentals — Distributed Rate Limiter
-            </option>
-            <option value="react-performance">
-              React Performance & Architecture — Virtual List Profiler
-            </option>
-          </select>
-        </div>
+        {targetAssignment ? (
+          <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-1.5">
+            <div className="flex items-center justify-between text-[11px] font-bold text-primary">
+              <span>{targetAssignment.courseTitle}</span>
+              <span>Max: {targetAssignment.maxScore || 100} pts</span>
+            </div>
+            <h4 className="text-sm font-bold text-foreground">{targetAssignment.assignmentTitle}</h4>
+            {targetAssignment.instructor && (
+              <p className="text-[11px] text-muted-foreground">
+                Instructor: <strong className="text-foreground">{targetAssignment.instructor}</strong>
+              </p>
+            )}
+            {(targetAssignment.brief || (targetAssignment as any).description) && (
+              <p className="text-xs text-muted-foreground pt-1 border-t border-border/40 leading-relaxed whitespace-pre-line">
+                {targetAssignment.brief || (targetAssignment as any).description}
+              </p>
+            )}
+            {targetAssignment.attachments && targetAssignment.attachments.length > 0 && (
+              <div className="pt-2 flex flex-wrap gap-1.5 items-center">
+                <span className="text-[10px] font-semibold text-muted-foreground">Attached Materials:</span>
+                {targetAssignment.attachments.map((att, aIdx) => (
+                  <a
+                    key={aIdx}
+                    href={att.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    download
+                    className="inline-flex items-center gap-1 rounded bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary hover:underline"
+                  >
+                    <span>{att.name}</span>
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            <label className="text-xs font-semibold">Select Instructor Project</label>
+            <select
+              value={selectedAsgId}
+              onChange={(e) => setSelectedAsgId(e.target.value)}
+              className="mt-1.5 w-full rounded-md border border-input bg-card px-3 py-2 text-xs font-medium"
+            >
+              {assignmentDefs.map((def) => (
+                <option key={def.id} value={def.id}>
+                  {def.courseTitle} — {def.title}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div>
           <label className="text-xs font-semibold">Project Repository / Demo Link (Optional)</label>

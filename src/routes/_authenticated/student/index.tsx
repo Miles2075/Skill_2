@@ -692,13 +692,7 @@ function StudentDashboardPage() {
                 <span className="text-xs text-slate-600">
                   New Assignments: <strong>{upcomingAssignments.length}</strong>
                 </span>
-                <button
-                  onClick={() => switchView("assignments")}
-                  className="text-xs font-bold text-indigo-600 hover:underline cursor-pointer"
-                >
-                  View
-                </button>
-              </div>
+                              </div>
               <div className="p-3 bg-white rounded-xl border border-indigo-100 shadow-sm flex items-center justify-between">
                 <span className="text-xs text-slate-600">
                   Courses in Progress:{" "}
@@ -749,14 +743,7 @@ function StudentDashboardPage() {
                   </Link>
                 )}
 
-                <button
-                  onClick={() => switchView("assignments")}
-                  className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs font-semibold text-white hover:bg-white/20 backdrop-blur-md transition-all cursor-pointer"
-                >
-                  <Layers className="size-3.5" />
-                  <span>Assignments ({upcomingAssignments.length})</span>
-                </button>
-              </div>
+                              </div>
             </div>
           </div>
 
@@ -1031,13 +1018,7 @@ function StudentDashboardPage() {
                   <Layers className="size-4 text-indigo-600" />
                   <h3 className="font-bold text-sm text-slate-900">Upcoming Assignments</h3>
                 </div>
-                <button
-                  onClick={() => switchView("assignments")}
-                  className="text-xs font-semibold text-indigo-600 hover:underline cursor-pointer"
-                >
-                  View All
-                </button>
-              </div>
+                              </div>
 
               <div className="space-y-3">
                 {upcomingAssignments.length > 0 ? (

@@ -109,7 +109,7 @@ function StudentRouteLayout() {
     };
   }, [user?.id]);
 
-  const [activeView, setActiveView] = useState<StudentNavView>(() => typeof window !== "undefined" && window.location.pathname.endsWith("/assignments") ? "assignments" : "dashboard");
+  const [activeView, setActiveView] = useState<StudentNavView>("dashboard");
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pendingAssignments, setPendingAssignments] = useState(0);
@@ -484,10 +484,7 @@ function StudentRouteLayout() {
             <button onClick={() => switchView("courses")} className="hover:text-indigo-600">
               My Courses
             </button>
-            <button onClick={() => switchView("assignments")} className="hover:text-indigo-600">
-              Assignments
-            </button>
-            <button onClick={() => switchView("certificates")} className="hover:text-indigo-600">
+                        <button onClick={() => switchView("certificates")} className="hover:text-indigo-600">
               Certificates
             </button>
           </div>

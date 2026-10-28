@@ -1443,40 +1443,195 @@ async function handleLmsApiRequestWithLocalStore(req: Request): Promise<Response
       return jsonResponse({ success: ok });
     }
 
+    // GET /api/lms/assignments (Providing assignments to students by teachers)
+    if (
+      (path === "assignments" || url.searchParams.get("action") === "assignments") &&
+      method === "GET"
+    ) {
+      const courseFilter = url.searchParams.get("courseId") || url.searchParams.get("courseSlug") || "";
+      const allAssignments = lmsDB.getAllAssignments(user.userId);
+      const filtered = courseFilter
+        ? allAssignments.filter(
+            (a) =>
+              a.course_id === courseFilter ||
+              a.course_slug === courseFilter ||
+              a.course_title.toLowerCase().includes(courseFilter.toLowerCase()),
+          )
+        : allAssignments;
+
+      return jsonResponse({
+        success: true,
+        assignments: filtered,
+      });
+    }
+
+    // GET /api/lms/assignment (Single assignment with student submission details)
+    if (
+      (path === "assignment" || url.searchParams.get("action") === "assignment") &&
+      method === "GET"
+    ) {
+      const id = url.searchParams.get("id");
+      if (!id) return errorResponse("Missing assignment id", 400);
+      const assignment = lmsDB.getAssignment(id, user.userId);
+      if (!assignment) return errorResponse("Assignment not found", 404);
+      return jsonResponse({
+        success: true,
+        assignment,
+      });
+    }
+
+    // POST /api/lms/upload-assignment-file (Teacher uploading assignment briefs, PDFs, starter code archives)
+    if (path === "upload-assignment-file" && method === "POST") {
+      if (!user.isTeacher) return errorResponse("Forbidden: Instructor role required", 403);
+
+      const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
+      const declaredSize = Number(
+        req.headers.get("x-file-size") || req.headers.get("content-length") || 0,
+      );
+      if (declaredSize > MAX_FILE_SIZE) {
+        return errorResponse("File is too large. Maximum size is 100 MB.", 413);
+      }
+      if (!req.body) return errorResponse("Assignment file is required.", 400);
+
+      let originalName = "assignment-materials.pdf";
+      const encodedName = req.headers.get("x-file-name");
+      if (encodedName) {
+        try {
+          originalName = decodeURIComponent(encodedName);
+        } catch {
+          originalName = encodedName;
+        }
+      }
+
+      const dot = originalName.lastIndexOf(".");
+      const extension = dot >= 0 ? originalName.slice(dot).toLowerCase() : "";
+      const allowedExtensions = new Set([
+        ".pdf", ".zip", ".tar", ".gz", ".rar", ".7z",
+        ".docx", ".doc", ".txt", ".md", ".json",
+        ".js", ".ts", ".tsx", ".jsx", ".py", ".java", ".cpp", ".c", ".go", ".rs",
+        ".png", ".jpg", ".jpeg", ".webp", ".svg"
+      ]);
+      if (extension && !allowedExtensions.has(extension)) {
+        return errorResponse(
+          `File type "${extension}" is not supported. Please upload PDF, ZIP, code files, or documents.`,
+          400,
+        );
+      }
+
+      const safeBase =
+        originalName
+          .slice(0, dot >= 0 ? dot : originalName.length)
+          .replace(/[^a-zA-Z0-9_-]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 80) || "assignment-resource";
+      const uniqueName = `asg-${Date.now()}-${crypto.randomUUID().slice(0, 8)}-${safeBase}${extension}`;
+
+      let publicUrl: string;
+      const contentType = req.headers.get("content-type") || "application/octet-stream";
+
+      try {
+        const blobToken =
+          process.env["BLOB_READ_WRITE_TOKEN"] ||
+          process.env["SKILLBRIDGE_BLOB_READ_WRITE_TOKEN"] ||
+          process.env["SKILLBRIDGE_READ_WRITE_TOKEN"];
+
+        if (blobToken) {
+          const blob = await put("assignments/" + uniqueName, req.body, {
+            access: "public",
+            addRandomSuffix: false,
+            contentType,
+            token: blobToken,
+          });
+          publicUrl = blob.url;
+        } else {
+          const uploadDir = nodePath.resolve(process.cwd(), "public", "uploads", "assignments");
+          fs.mkdirSync(uploadDir, { recursive: true });
+          const filePath = nodePath.join(uploadDir, uniqueName);
+          const writeStream = fs.createWriteStream(filePath);
+          await pipeline(
+            Readable.fromWeb(req.body as unknown as Parameters<typeof Readable.fromWeb>[0]),
+            writeStream,
+          );
+          const stat = await fs.promises.stat(filePath);
+          if (declaredSize > 0 && stat.size === 0) {
+            await fs.promises.rm(filePath, { force: true }).catch(() => {});
+            return errorResponse("File upload failed: 0 bytes written to disk.", 500);
+          }
+          publicUrl = "/uploads/assignments/" + uniqueName;
+        }
+
+        return jsonResponse({
+          success: true,
+          file: {
+            name: originalName,
+            url: publicUrl,
+            size: declaredSize,
+            type: contentType,
+          },
+        });
+      } catch (err) {
+        console.error("Assignment upload error:", err);
+        return errorResponse(
+          err instanceof Error ? err.message : "Failed to upload assignment file.",
+          500,
+        );
+      }
+    }
+
     // POST /api/lms/submit-assignment
     if (path === "submit-assignment" && method === "POST") {
       if (!user.userId) return errorResponse("Unauthorized", 401);
       const body = await req.json();
       const { assignmentId, courseId, githubUrl = "", solutionNotes = "" } = body;
-      if (!assignmentId || !courseId) return errorResponse("Missing assignmentId or courseId");
+      if (!assignmentId) return errorResponse("Missing assignmentId");
 
-      // Only accept assignments that actually exist on one of this student's
-      // enrolled courses. This prevents fabricated IDs or cross-course submissions.
-      const dashboard = lmsDB.getStudentDashboard(user.userId);
-      const assignment = dashboard.upcomingAssignments.find((item) => item.id === assignmentId);
+      const snapshot = lmsDB.exportSnapshot();
+      let assignment = snapshot.assignments.find((item) => item.id === assignmentId);
       if (!assignment) {
-        return errorResponse("Assignment not found for your enrolled courses.", 404);
+        const dashboard = lmsDB.getStudentDashboard(user.userId);
+        const dashAsg = dashboard.upcomingAssignments.find((item) => item.id === assignmentId);
+        if (dashAsg) {
+          assignment = snapshot.assignments.find(
+            (item) => item.id === dashAsg.id || item.title === dashAsg.title,
+          );
+        }
       }
 
-      const assignedCourse = lmsDB.getCourse(assignment.courseSlug);
-      if (
-        !assignedCourse ||
-        (courseId !== assignment.courseSlug && courseId !== assignedCourse.id)
-      ) {
-        return errorResponse("This assignment does not belong to the selected course.", 400);
+      if (!assignment) {
+        return errorResponse("Assignment not found.", 404);
       }
 
-      const course = assignedCourse;
+      const assignedCourse =
+        lmsDB.getCourse(assignment.course_id) ||
+        lmsDB.getCourse(assignment.course_slug) ||
+        (courseId ? lmsDB.getCourse(courseId) : null);
+
+      const resolvedCourseId = assignedCourse?.id || assignment.course_id || courseId;
+
+      // Auto-enroll student if not enrolled yet so they can track their submission
+      const existingEnrollment = lmsDB.getStudentEnrollment(user.userId, resolvedCourseId);
+      if (!existingEnrollment && assignedCourse) {
+        try {
+          lmsDB.enrollStudent(
+            user.userId,
+            assignedCourse.id,
+            user.name || "Student",
+            user.email || "student@example.com",
+          );
+        } catch {
+          // ignore enrollment collision
+        }
+      }
 
       const submission = lmsDB.submitAssignment({
-        assignment_id: assignmentId,
-        course_id: course.id,
+        assignment_id: assignment.id,
+        course_id: resolvedCourseId,
         student_id: user.userId,
         student_name: user.name || body.studentName || "Student",
         student_email: user.email || body.studentEmail || "student@example.com",
         github_url: githubUrl,
         solution_notes: solutionNotes,
-        max_score: Number(body.maxScore) || 100,
+        max_score: Number(body.maxScore) || assignment.max_score || 100,
       });
 
       return jsonResponse({ submission });
@@ -1501,7 +1656,7 @@ async function handleLmsApiRequestWithLocalStore(req: Request): Promise<Response
       return jsonResponse({ submission: graded });
     }
 
-    // POST /api/lms/save-assignment
+    // POST /api/lms/save-assignment (Creating / uploading assignment details & materials)
     if (path === "save-assignment" && method === "POST") {
       if (!user.isTeacher) return errorResponse("Forbidden", 403);
       const body = await req.json();
@@ -1527,19 +1682,41 @@ async function handleLmsApiRequestWithLocalStore(req: Request): Promise<Response
         return errorResponse("Assignment instructions are required.", 400);
       }
 
+      const attachments = Array.isArray(body.attachments)
+        ? body.attachments.map((a) => {
+            const att = a || {};
+            return {
+              name: String(att.name || "Resource"),
+              url: String(att.url || ""),
+              size: typeof att.size === "number" ? att.size : undefined,
+              type: typeof att.type === "string" ? att.type : undefined,
+            };
+          }).filter((a) => Boolean(a.url))
+        : [];
+
+      const tags = Array.isArray(body.tags)
+        ? body.tags.map(String).filter(Boolean)
+        : typeof body.tags === "string"
+          ? body.tags.split(",").map((t) => t.trim()).filter(Boolean)
+          : [];
+
       const asg = lmsDB.saveAssignment({
         id: body.id,
         course_id: course.id,
         course_slug: course.slug,
         course_title: course.title,
-        title: body.title,
-        description: body.description || "",
+        instructor: body.instructor || course.instructor || user.name || "Faculty Lead",
+        title: body.title.trim(),
+        description: body.description.trim(),
         due_date: body.dueDate || new Date(Date.now() + 86400000 * 7).toISOString(),
         max_score: Number(body.maxScore) || 100,
+        attachments,
+        starter_repo_url: typeof body.starterRepoUrl === "string" ? body.starterRepoUrl.trim() : "",
+        tags,
         created_by: user.userId,
       });
 
-      return jsonResponse({ assignment: asg });
+      return jsonResponse({ success: true, assignment: asg });
     }
 
     // DELETE /api/lms/assignment

@@ -9,7 +9,7 @@ import {
   Camera,
   ChevronDown,
   ChevronRight,
-  ClipboardList,
+    ClipboardList,
   Code2,
   Globe,
   GraduationCap,
@@ -106,6 +106,7 @@ function StudentLayout({
   }, [accountMenuOpen]);
 
   const changeView = (next: StudentView) => {
+    
     if (next === "settings") {
       setProfileModalOpen(true);
       setMobileOpen(false);
@@ -320,11 +321,11 @@ function StudentLayout({
                       >
                         <BookOpen className="size-4 text-muted-foreground" /> Explore Courses
                       </button>
-                      <button
+                                            <button
                         onClick={() => changeView("assignments")}
                         className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm hover:bg-secondary cursor-pointer"
                       >
-                        <ClipboardList className="size-4 text-muted-foreground" /> Assignments
+                        <ClipboardList className="size-4 text-muted-foreground" /> Assignments & Projects
                       </button>
                       <button
                         onClick={() => changeView("certificates")}

@@ -384,9 +384,55 @@
       "created_by": "8d95e694-3d47-422e-a017-86a1a0ee1251",
       "created_at": "2026-09-18T00:00:00.000Z",
       "updated_at": "2026-09-18T00:00:00.000Z"
+    },
+    {
+      "id": "asg_1793103231316_6id5",
+      "course_id": "45c4dd4a-715b-4f7d-b508-9c7501f2a63b",
+      "course_slug": "advanced-typescript",
+      "course_title": "Advanced TypeScript & Design Patterns",
+      "instructor": "Sarah Chen",
+      "title": "Real-Time WebSocket State Engine",
+      "description": "Build an event-driven bidirectional WebSocket server with TypeScript type narrowing and reconnection backoff strategies. Consult the attached instructor architecture document.",
+      "due_date": "2026-11-10",
+      "max_score": 100,
+      "attachments": [
+        {
+          "name": "websockets-architecture-spec.pdf",
+          "url": "/uploads/assignments/asg-1793103231277-fc6be087-websockets-architecture-spec.pdf",
+          "size": 85,
+          "type": "application/pdf"
+        }
+      ],
+      "starter_repo_url": "https://github.com/skillbridge-curriculum/ws-state-engine",
+      "tags": [
+        "TypeScript",
+        "WebSockets",
+        "State Management"
+      ],
+      "created_by": "8d95e694-3d47-422e-a017-86a1a0ee1251",
+      "created_at": "2026-10-27T12:13:51.316Z",
+      "updated_at": "2026-10-27T12:13:51.316Z"
     }
   ],
-  "submissions": [],
+  "submissions": [
+    {
+      "assignment_id": "asg_1793103231316_6id5",
+      "course_id": "45c4dd4a-715b-4f7d-b508-9c7501f2a63b",
+      "student_id": "00000000-0000-4000-a000-000000000001",
+      "student_name": "Alex Learner",
+      "student_email": "student@skillbridge.edu",
+      "github_url": "https://github.com/alex-learner/ws-state-engine-solution",
+      "solution_notes": "Implemented strongly-typed event emitter with generic payload discrimination and exponential backoff retry for network reconnects.",
+      "max_score": 100,
+      "id": "sub_1793103246951_xkka",
+      "submitted_at": "2026-10-27T12:14:06.951Z",
+      "status": "pending",
+      "score": null,
+      "feedback": null,
+      "graded_at": null,
+      "graded_by": null
+    }
+  ],
   "quizzes": [
     {
       "id": "quiz-ts-1",
@@ -687,6 +733,20 @@
       "token": "sb_local_1791287603279_cb21cd82d274bee8ed668b3b56304d447f3208136c14a646",
       "expires_at": "2026-11-05T11:53:23.279Z",
       "created_at": "2026-10-06T11:53:23.279Z"
+    },
+    {
+      "id": "9d5f63fb-1557-4238-bd09-79923076423b",
+      "user_id": "8d95e694-3d47-422e-a017-86a1a0ee1251",
+      "token": "sb_local_1793103231262_df2f7d05621af0675fa300f20ca660739f870e17ccf4250d",
+      "expires_at": "2026-11-26T12:13:51.262Z",
+      "created_at": "2026-10-27T12:13:51.262Z"
+    },
+    {
+      "id": "fe82a4cf-8996-4a47-9335-f96034ec69f2",
+      "user_id": "00000000-0000-4000-a000-000000000001",
+      "token": "sb_local_1793103246936_a0404f2930dbc6c23149da43685a21dc2f062019090642a0",
+      "expires_at": "2026-11-26T12:14:06.936Z",
+      "created_at": "2026-10-27T12:14:06.936Z"
     }
   ],
   "purchases": [
@@ -755,5 +815,7 @@
       "email": "krishtalati05@gmail.com",
       "created_at": "2026-10-06T11:53:16.445Z"
     }
-  ]
+  ],
+  "password_reset_tokens": [],
+  "course_reviews": []
 }

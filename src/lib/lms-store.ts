@@ -100,6 +100,13 @@ export interface QuizAttempt {
   answers: Record<number, number>;
 }
 
+export interface AssignmentAttachment {
+  name: string;
+  url: string;
+  size?: number;
+  type?: string;
+}
+
 export interface AssignmentDefinition {
   id: string;
   courseSlug: string;
@@ -109,6 +116,10 @@ export interface AssignmentDefinition {
   dueDate: string;
   maxScore: number;
   submissionCount?: number;
+  instructor?: string;
+  attachments?: AssignmentAttachment[];
+  starterRepoUrl?: string;
+  tags?: string[];
 }
 
 export interface CourseLesson {

@@ -74,18 +74,36 @@ export interface LessonProgress {
   updated_at: string;
 }
 
+export interface AssignmentAttachment {
+  name: string;
+  url: string;
+  size?: number;
+  type?: string;
+}
+
 export interface Assignment {
   id: string;
   course_id: string;
   course_slug: string;
   course_title: string;
+  instructor?: string;
   title: string;
   description: string;
   due_date: string;
   max_score: number;
+  attachments?: AssignmentAttachment[];
+  starter_repo_url?: string;
+  tags?: string[];
   created_by: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface AssignmentWithStatus extends Assignment {
+  instructor: string;
+  studentSubmission?: AssignmentSubmission | null;
+  submissionStatus: "unsubmitted" | "pending" | "approved" | "resubmission_required";
+  submissionCount: number;
 }
 
 export interface AssignmentSubmission {
@@ -2114,6 +2132,10 @@ class DatabaseManager {
         db.assignments[idx] = {
           ...db.assignments[idx]!,
           ...asg,
+          attachments: asg.attachments ?? db.assignments[idx]!.attachments ?? [],
+          starter_repo_url: asg.starter_repo_url ?? db.assignments[idx]!.starter_repo_url ?? "",
+          tags: asg.tags ?? db.assignments[idx]!.tags ?? [],
+          instructor: asg.instructor ?? db.assignments[idx]!.instructor,
           updated_at: now,
         };
         this.write();
@@ -2124,12 +2146,68 @@ class DatabaseManager {
     const newAsg: Assignment = {
       ...asg,
       id: asg.id || `asg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      attachments: asg.attachments || [],
+      starter_repo_url: asg.starter_repo_url || "",
+      tags: asg.tags || [],
       created_at: now,
       updated_at: now,
     };
     db.assignments.push(newAsg);
     this.write();
     return newAsg;
+  }
+
+  getAllAssignments(studentId?: string | null): AssignmentWithStatus[] {
+    const db = this.read();
+    const courses = db.courses;
+    const courseMap = new Map<string, Course>();
+    courses.forEach((c) => {
+      courseMap.set(c.id, c);
+      courseMap.set(c.slug, c);
+    });
+
+    const submissions = db.submissions || [];
+    const studentSubmissions = studentId
+      ? submissions.filter((s) => s.student_id === studentId)
+      : [];
+
+    return db.assignments.map((asg) => {
+      const course = courseMap.get(asg.course_id) || courseMap.get(asg.course_slug);
+      const instructorName =
+        asg.instructor ||
+        course?.instructor ||
+        (asg.created_by ? db.users.find((u) => u.id === asg.created_by)?.display_name : null) ||
+        "Faculty Lead";
+
+      const asgSubmissions = submissions.filter((s) => s.assignment_id === asg.id);
+      const studentSub = studentSubmissions
+        .filter((s) => s.assignment_id === asg.id)
+        .sort((a, b) => String(b.submitted_at || "").localeCompare(String(a.submitted_at || "")))[0] || null;
+
+      return {
+        ...asg,
+        course_title: asg.course_title || course?.title || "Course",
+        course_slug: asg.course_slug || course?.slug || "general",
+        instructor: instructorName,
+        attachments: asg.attachments || [],
+        starter_repo_url: asg.starter_repo_url || "",
+        tags: asg.tags || [],
+        studentSubmission: studentSub,
+        submissionStatus: studentSub
+          ? (studentSub.status === "approved"
+              ? "approved"
+              : studentSub.status === "resubmission_required"
+                ? "resubmission_required"
+                : "pending")
+          : "unsubmitted",
+        submissionCount: asgSubmissions.length,
+      };
+    });
+  }
+
+  getAssignment(id: string, studentId?: string | null): AssignmentWithStatus | null {
+    const list = this.getAllAssignments(studentId);
+    return list.find((a) => a.id === id) || null;
   }
 
   deleteAssignment(id: string): boolean {

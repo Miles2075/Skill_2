@@ -88,6 +88,42 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   }
 }
 
+export interface ClientAssignmentAttachment {
+  name: string;
+  url: string;
+  size?: number;
+  type?: string;
+}
+
+export interface ClientAssignment {
+  id: string;
+  course_id: string;
+  course_slug: string;
+  course_title: string;
+  instructor: string;
+  title: string;
+  description: string;
+  due_date: string;
+  max_score: number;
+  attachments?: ClientAssignmentAttachment[];
+  starter_repo_url?: string;
+  tags?: string[];
+  submissionStatus: "unsubmitted" | "pending" | "approved" | "resubmission_required";
+  submissionCount: number;
+  studentSubmission?: {
+    id: string;
+    status: "pending" | "approved" | "resubmission_required";
+    score: number | null;
+    max_score: number;
+    feedback: string | null;
+    submitted_at: string;
+    github_url?: string;
+    solution_notes?: string;
+  } | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface ClientCourse {
   id: string;
   slug: string;
@@ -587,6 +623,49 @@ export const lmsClient = {
     });
   },
 
+  async getAssignments(params?: {
+    courseId?: string;
+    courseSlug?: string;
+  }): Promise<{ assignments: ClientAssignment[] }> {
+    const query = new URLSearchParams();
+    if (params?.courseId) query.set("courseId", params.courseId);
+    if (params?.courseSlug) query.set("courseSlug", params.courseSlug);
+    const qs = query.toString() ? `?${query.toString()}` : "";
+    return request(`assignments${qs}`);
+  },
+
+  async getAssignment(id: string): Promise<{ assignment: ClientAssignment }> {
+    return request(`assignment?id=${encodeURIComponent(id)}`);
+  },
+
+  async uploadAssignmentFile(file: File): Promise<{
+    success: boolean;
+    file: {
+      name: string;
+      url: string;
+      size: number;
+      type: string;
+    };
+  }> {
+    const authHeaders = await getAuthHeaders();
+    const encodedName = encodeURIComponent(file.name);
+    const response = await fetch("/api/lms/upload-assignment-file", {
+      method: "POST",
+      headers: {
+        ...authHeaders,
+        "Content-Type": file.type || "application/octet-stream",
+        "x-file-name": encodedName,
+        "x-file-size": String(file.size),
+      },
+      body: file,
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: "File upload failed" }));
+      throw new Error(err.error || `Upload failed with status ${response.status}`);
+    }
+    return response.json();
+  },
+
   async saveAssignment(data: {
     id?: string;
     courseId: string;
@@ -594,7 +673,11 @@ export const lmsClient = {
     description: string;
     dueDate?: string;
     maxScore?: number;
-  }): Promise<{ assignment: unknown }> {
+    instructor?: string;
+    attachments?: Array<{ name: string; url: string; size?: number; type?: string }>;
+    starterRepoUrl?: string;
+    tags?: string[];
+  }): Promise<{ success?: boolean; assignment: unknown }> {
     return request("save-assignment", {
       method: "POST",
       body: JSON.stringify(data),
